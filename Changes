@@ -1,5 +1,9 @@
 Revision history for Net-OBEX
 
-0.01    Date/time
+0.002   Mar 4, 2008
+        Fixed the bug with set_path() where you weren't able
+            to set neither do_up nor no_create flags
+
+0.001   Mar 3, 2008
         First version, released on an unsuspecting world.
 

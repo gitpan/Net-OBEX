@@ -3,7 +3,7 @@ package Net::OBEX;
 use warnings;
 use strict;
 
-our $VERSION = '0.001';
+our $VERSION = '0.002';
 
 use Carp;
 use Socket::Class;
@@ -162,6 +162,8 @@ sub set_path {
     my $set_path_packet = $self->obj_req->make(
         packet  => 'setpath',
         headers => $args{headers},
+        (defined $args{do_up} ? ( do_up => $args{do_up} ) : ()),
+        defined $args{no_create} ? (no_create => $args{no_create}) : (),
     );
 
     my $sock = $self->sock;
@@ -556,7 +558,7 @@ C<parse_sock()> method description for the return value when
         headers => [ $bunch, $of, $raw, $headers ],
     ) or die "Error: " . $obex->error;
 
-Instructs the object to send a C<SetPath> packet. Takes two optional
+Instructs the object to send a C<SetPath> packet. Takes four optional
 arguments which are as follows:
 
 =head3 path
@@ -566,6 +568,22 @@ arguments which are as follows:
 B<Optional>. Whatever you specify in the C<path> argument will be sent
 out in the packet's C<Name> header, which is the path to change to.
 B<By default> no path is set, meaning set path to "root folder".
+
+=head3 do_up
+
+    $obex->set_path( do_up => 1 );
+
+B<Optional>. Takes either true or false value, indicating whether or
+not to set the "backup a level before applying name" flag in the SetPath
+packet. B<Defaults to:> C<0>
+
+=head3 no_create
+
+    $obex->set_path( no_create => 0 );
+
+B<Optional>. Takes either true or false value, indicating whether or not
+to set the "don't create directory if it does not exist, return an
+error instead." flag in the SetPath packet. B<Defaults to:> C<1>
 
 =head3 headers
 

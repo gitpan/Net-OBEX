@@ -1,6 +1,6 @@
 ---
 name: Net-OBEX
-version: 0.001
+version: 0.002
 author:
   - 'Zoffix Znet <zoffix@cpan.org>'
 abstract: implementation of OBEX protocol
@@ -20,7 +20,7 @@ build_requires:
 provides:
   Net::OBEX:
     file: lib/Net/OBEX.pm
-    version: 0.001
+    version: 0.002
 generated_by: Module::Build version 0.2808
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.2.html
