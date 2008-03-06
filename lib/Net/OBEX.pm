@@ -3,7 +3,7 @@ package Net::OBEX;
 use warnings;
 use strict;
 
-our $VERSION = '0.002';
+our $VERSION = '0.003';
 
 use Carp;
 use Socket::Class;
@@ -231,8 +231,12 @@ sub get {
             }
         }
 
-        if ( exists $response_ref->{headers}{body} ) {
-            my $body = $response_ref->{headers}{body};
+        if ( exists $response_ref->{headers}{body}
+            or exists $response_ref->{headers}{end_of_body}
+        ) {
+            my $body = exists $response_ref->{headers}{end_of_body}
+                     ? $response_ref->{headers}{end_of_body}
+                     : $response_ref->{headers}{body};
             if ( exists $args{file} ) {
                 $args{file}->print($body);
             }

@@ -1,5 +1,9 @@
 Revision history for Net-OBEX
 
+0.003   Mar 5, 2008
+        Fixed the bug where contents of End Of Body headers
+            were not appended to returns of get()
+
 0.002   Mar 4, 2008
         Fixed the bug with set_path() where you weren't able
             to set neither do_up nor no_create flags
