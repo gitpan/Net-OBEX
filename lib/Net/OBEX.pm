@@ -3,7 +3,7 @@ package Net::OBEX;
 use warnings;
 use strict;
 
-our $VERSION = '0.003';
+our $VERSION = '0.004';
 
 use Carp;
 use Socket::Class;
@@ -11,12 +11,17 @@ use IO::Handle;
 use Net::OBEX::Packet::Request;
 use Net::OBEX::Response;
 use Net::OBEX::Packet::Headers;
+use Devel::TakeHashArgs;
 
 use base qw(Class::Data::Accessor);
 
 __PACKAGE__->mk_classaccessors( qw(
         sock
         error
+        mtu
+        success
+        code
+        status
         connection_id
         obj_res
         obj_head
@@ -38,28 +43,18 @@ sub new {
 
 sub connect {
     my $self = shift;
-    croak "Must have even number of arguments to connect()"
-        if @_ & 1;
-
-    my %args = @_;
-    $args{ +lc } = delete $args{ $_ } for keys %args;
-
-    croak "Missing `address` argument to connect()"
-        unless exists $args{address};
-
-    croak "Missing `port` argument to connect()"
-        unless exists $args{port};
-
-    %args = (
-        version => "\x10",
-        mtu     => 4096,
-        domain  => 'bluetooth',
-        type    => 'stream',
-        proto   => 'rfcomm',
-        headers => [],
-
-        %args,
-    );
+    $self->$_(undef) for qw(success code status mtu);
+    get_args_as_hash(\@_, \ my %args, {
+            version => "\x10",
+            mtu     => 4096,
+            domain  => 'bluetooth',
+            type    => 'stream',
+            proto   => 'rfcomm',
+            headers => [],
+        },
+        [ qw(address port) ],
+    )
+    or croak $@;
 
     my $sock = Socket::Class->new(
         'domain'        => $args{domain},
@@ -73,10 +68,9 @@ sub connect {
 
     $self->sock( $sock );
 
-     if ( defined $args{target} ) {
-         push @{ $args{headers} },
+     defined $args{target}
+        and push @{ $args{headers} },
              $self->obj_head->make( target => pack 'H*', $args{target} );
-     }
 
     my $connect_packet = $self->obj_req->make(
         packet  => 'connect',
@@ -97,30 +91,30 @@ sub connect {
             $self->obj_head->make( connection_id => $id )
         );
     }
+
+    # save other party's MTU
+    $self->mtu( $response_ref->{info}{mtu} || 255 );
+
+    $response_ref->{info}{response_code} == 200
+        and $self->success(1);
+
+    $self->code( $response_ref->{info}{response_code} );
+    $self->status( $response_ref->{info}{response_code_meaning} );
+
     return $self->response( $response_ref );
 }
 
 sub disconnect {
     my $self = shift;
-
-    croak "Must have even number of arguments to set_path()"
-        if @_ & 1;
-
-    my %args = @_;
-    $args{ +lc } = delete $args{ $_ } for keys %args;
-    
-    $args{headers} = []
-        unless exists $args{headers};
+    get_args_as_hash( \@_, \ my %args, { headers => [] } )
+        or croak $@;
 
     # Connection ID must be the first header if it's present
-    if ( defined(my $conn_id_header = $self->connection_id) ) {
-        unshift @{ $args{headers} }, $conn_id_header;
-    }
+    $self->_add_connection_id( $args{headers} );
 
-    if ( defined $args{description} ) {
-        push @{ $args{headers} },
+    defined $args{description}
+        and push @{ $args{headers} },
             $self->head->make( description => $args{description} );
-    }
 
     my $disconnect_packet = $self->obj_req->make(
         packet  => 'disconnect',
@@ -139,31 +133,23 @@ sub disconnect {
 
 sub set_path {
     my $self = shift;
-    croak "Must have even number of arguments to set_path()"
-        if @_ & 1;
-
-    my %args = @_;
-    $args{ +lc } = delete $args{ $_ } for keys %args;
-    
-    $args{headers} = []
-        unless exists $args{headers};
+    $self->$_(undef) for qw(success code status);
+    get_args_as_hash( \@_, \ my %args, { headers => [] } )
+        or croak $@;
 
     # Connection ID must be the first header if it's present
-    if ( defined( my $conn_id_header = $self->connection_id ) ) {
-        unshift @{ $args{headers} }, $conn_id_header;
-    }
+    $self->_add_connection_id( $args{headers} );
 
     # the path to setpath to should go into Name header
-    if ( defined $args{path} ) {
-        push @{ $args{headers} },
+    defined $args{path}
+        and push @{ $args{headers} },
             $self->obj_head->make( name => $args{path} );
-    }
 
     my $set_path_packet = $self->obj_req->make(
         packet  => 'setpath',
         headers => $args{headers},
-        (defined $args{do_up} ? ( do_up => $args{do_up} ) : ()),
-        defined $args{no_create} ? (no_create => $args{no_create}) : (),
+        (defined $args{do_up    } ? ( do_up     => $args{do_up    } ) : ()),
+        (defined $args{no_create} ? ( no_create => $args{no_create} ) : ()),
     );
 
     my $sock = $self->sock;
@@ -173,36 +159,28 @@ sub set_path {
     my $response_ref = $obj_response->parse_sock( $sock )
         or return $self->_set_error( $obj_response->error );
 
+    $response_ref->{info}{response_code} == 200
+        and $self->success(1);
+
+    $self->code( $response_ref->{info}{response_code} );
+    $self->status( $response_ref->{info}{response_code_meaning} );
 
     return $self->response( $response_ref );
 }
 
 sub get {
     my $self = shift;
-    croak "Must have even number of arguments to get()"
-        if @_ & 1;
-
-    my %args = @_;
-    $args{ +lc } = delete $args{ $_ } for keys %args;
-    
-    %args = (
-        is_final   => 1,
-        headers    => [],
-        %args,
-    );
+    $self->$_(undef) for qw(success code status);
+    get_args_as_hash( \@_, \ my %args, { is_final => 1, headers => [] } )
+        or croak $@;
 
     # Connection ID must be the first header if it's present
-    if ( defined( my $conn_id_header = $self->connection_id ) ) {
-        unshift @{ $args{headers} }, $conn_id_header;
-    }
+    $self->_add_connection_id( $args{headers} );
 
     my $head = $self->obj_head;
-    if ( defined $args{type} ) {
-        push @{ $args{headers} }, $head->make( type => $args{type} );
-    }
-
-    if ( defined $args{name} ) {
-        push @{ $args{headers} }, $head->make( name => $args{name} );
+    for ( qw(type name ) ) {
+        defined $args{ $_ }
+            and push @{ $args{headers} }, $head->make( $_ => $args{ $_ } );
     }
 
     my $obj_request  = $self->obj_req;
@@ -237,6 +215,7 @@ sub get {
             my $body = exists $response_ref->{headers}{end_of_body}
                      ? $response_ref->{headers}{end_of_body}
                      : $response_ref->{headers}{body};
+
             if ( exists $args{file} ) {
                 $args{file}->print($body);
             }
@@ -256,7 +235,25 @@ sub get {
 
             redo CONTINIUE_GET;
         }
+
+        unless (
+            $response_ref->{info}{response_code} == 200
+            or $response_ref->{info}{response_code} == 100
+        ) {
+            $self->status(
+                $response_ref->{info}{response_code_meaning}
+            );
+            $self->code( $response_ref->{info}{response_code} );
+            $response_ref->{is_error} = 1;
+            return $response_ref;
+        }
     } # CONTINUTE_GET block end
+
+    $first_response_code == 200 or $first_response_code == 100
+        and $self->success(1);
+
+    $self->code( $first_response_code );
+    $self->status( $first_response_code_meaning );
 
     return $self->response( {
             body            => $full_body,
@@ -267,12 +264,112 @@ sub get {
     );
 }
 
-sub _set_error {
-    my ( $self, $error ) = @_;
-    $self->error( $error );
-    return;
-}
+sub put {
+    my $self = shift;
+    $self->$_(undef) for qw(success code status);
+    get_args_as_hash( \@_, \ my %args, {
+            headers         => [],
+            body_in_first   => 0,
+            no_name         => 0,
+        },
+        [ 'what' ],
+    ) or croak $@;
 
+    # Connection ID must be the first header if it's present
+    $self->_add_connection_id( $args{headers} );
+    
+    my $head = $self->obj_head;
+    for ( qw(length time name type) ) {
+        exists $args{ $_ }
+            and push @{ $args{headers} }, $head->make( $_, $args{$_} );
+    }
+
+    unless ( $args{no_name} or exists $args{name} ) {
+        push @{ $args{headers} }, $head->make( name => $args{what} );
+    }
+
+    open my $fh, '<', $args{what}
+        or return $self->_set_error("Failed to open $args{what} ($!)");
+
+    binmode $fh;
+
+    my $mtu = $self->mtu - 2 - length join '', @{ $args{headers} };
+
+    my $sock = $self->sock;
+    my $obj_res = $self->obj_res;
+    my $obj_req = $self->obj_req;
+    unless ( $args{body_in_first} ) {
+        my $packet = $obj_req->make(
+            packet  => 'put',
+            headers => $args{headers},
+        );
+
+        $sock->send( $packet );
+        my $response_ref = $obj_res->parse_sock( $sock )
+            or return $self->_set_error(
+                'Socket error: ' . $obj_res->error
+            );
+
+        unless (
+            $response_ref->{info}{response_code} == 200
+            or $response_ref->{info}{response_code} == 100
+        ) {
+            $self->status(
+                $response_ref->{info}{response_code_meaning}
+            );
+            $self->code( $response_ref->{info}{response_code} );
+            return $response_ref;
+        }
+    }
+
+    {
+        local $/ = \$mtu;
+        while ( <$fh> ) {
+
+            my $packet = $obj_req->make(
+                packet  => 'put',
+                headers => [
+                    ( $args{body_in_first} ? () : @{ $args{headers} } ),
+                    $head->make( body => $_ ),
+                ],
+            );
+            $sock->send( $packet );
+            my $response_ref = $obj_res->parse_sock( $sock )
+                or return $self->_set_error(
+                    'Socket error: ' . $obj_res->error
+                );
+
+            unless (
+                $response_ref->{info}{response_code} == 200
+                or $response_ref->{info}{response_code} == 100
+            ) {
+                $self->status(
+                    $response_ref->{info}{response_code_meaning}
+                );
+                $self->code( $response_ref->{info}{response_code} );
+                $response_ref->{is_error} = 1;
+                return $response_ref;
+            }
+        }
+        my $packet = $obj_req->make(
+            packet   => 'put',
+            is_final => 1,
+            headers => [
+                @{ $args{headers} },
+                $head->make( end_of_body => '' ),
+            ],
+        );
+
+        $sock->send( $packet );
+        my $response_ref = $obj_res->parse_sock( $sock );
+        $response_ref->{info}{response_code} == 200
+            and $self->success(1);
+
+        $self->code( $response_ref->{info}{response_code} );
+        $self->status( $response_ref->{info}{response_code_meaning} );
+        return $self->response( $response_ref );
+    }
+}
 
 sub close {
     my ( $self, $description ) = @_;
@@ -295,8 +392,20 @@ sub close {
     return 1;
 }
 
-1;
+sub _add_connection_id {
+    my ( $self, $headers_ref ) = @_;
+    if ( defined ( my $id = $self->connection_id ) ) {
+        unshift @$headers_ref, $id;
+    }
+}
 
+sub _set_error {
+    my ( $self, $error ) = @_;
+    $self->error( $error );
+    return;
+}
+
+1;
 __END__
 
 =head1 NAME
@@ -312,33 +421,27 @@ Net::OBEX - implementation of OBEX protocol
 
     my $obex = Net::OBEX->new;
 
-    my $response_ref = $obex->connect(
+    $obex->connect(
         address => '00:17:E3:37:76:BB',
         port    => 9,
         target  => 'F9EC7BC4953C11D2984E525400DC9E09', # OBEX FTP UUID
     ) or die "Failed to connect: " . $obex->error;
 
-    unless ( $response_ref->{info}{response_code} == 200 ) {
-        die "Server no liky :( " . $response_ref->{info}{response_code_meaning};
-    }
+    $obex->success
+        or die "Server no liky :( " . $obex->status;
 
-    $response_ref = $obex->set_path
+    $obex->set_path
         or die "Error: " . $obex->error;
 
-    unless ( $response_ref->{info}{response_code} == 200 ) {
-        die "Server no liky :( " . $response_ref->{info}{response_code_meaning};
-    }
+    $obex->success
+        die "Server no liky :( " . $obex->status;
 
     # this is an OBEX FTP example, so we'll get the folder listing now
-    $response_ref = $obex->get( type => 'x-obex/folder-listing' )
+    my $response_ref = $obex->get( type => 'x-obex/folder-listing' )
         or die "Error: " . $obex->error;
 
-    # note: for gets, there might be multiple requests, so there is no {info}
-    my $code = $response_ref->{response_code};
-    unless ( $code == 200 or $code == 100 ) {
-        die "Server no liky :( "
-                . $response_ref->{response_code_meaning};
-    }
+    $obex->success
+        or die "Server no liky :( " . $obes->status;
 
     print "This is folder listing XML: \n$response_ref->{body}\n";
 
@@ -362,6 +465,40 @@ The module is a Perl implementation of IrOBEX protocol.
 Takes no arguments, returns a freshly baked Net::OBEX object ready to
 use and abuse.
 
+=head1 STATUS METHODS
+
+=head2 success
+
+    $obex->success
+        or die 'Error: (code: ' . $obex->code . ') ' . $obex->status;
+
+Must be called after either C<connect()>, C<set_path()>, C<get()> or
+C<put()> method. Returns either true or false value indicating whether
+or not the call to last C<connect()>, C<set_path()>, C<get()> or
+C<put()> method ended with a successfull response from the server
+(code 200). B<Note:> the aforementioned methods returning a non-error
+(see descriptions below) does B<NOT> imply that C<success()> will return
+a true value.
+
+=head2 code
+
+    $obex->success
+        or die 'Error: (code: ' . $obex->code . ') ' . $obex->status;
+
+Must be called after either C<connect()>, C<set_path()>, C<get()> or
+C<put()> method. Returns the status code of the last response from the
+server.
+
+=head2 status
+
+    $obex->success
+        or die 'Error: (code: ' . $obex->code . ') ' . $obex->status;
+
+Must be called after either C<connect()>, C<set_path()>, C<get()> or
+C<put()> method. Returns the status code description
+of the last response from the server (i.e. "Ok, Success" if C<code()>
+is C<200>)
+
 =head1 METHODS
 
 =head2 connect
@@ -371,7 +508,7 @@ use and abuse.
         port    => 9,
     ) or die "Failed to connect: " . $obex->error;
 
-    my $response_ref = $obex->connect(
+    $obex->connect(
         address => '00:17:E3:37:76:BB',
         port    => 9,
         version => "\x10",
@@ -801,6 +938,122 @@ C<parse_sock()> method in L<Net::OBEX::Headers> with the "is connect packet"
 flag set to false. If C<file> argument is set, C<responses> arrayref
 will be empty.
 
+=head2 put
+
+    $obex->put( what => 'some_file' )
+        or die $obex->error;
+
+    my $response_ref = $obex->put(
+        what          => 'some_file',
+        body_in_first => 0,
+        length        => 12312,
+        no_name       => 1,
+        name          => 'other_file',
+        time          => '20080320T202020Z',
+    ) or die $obex->error;
+
+Instructs the object to send C<PUT> packet. As of now only sending
+of files is supported and due to the limited testing environment this
+support may be broken. During my tests (with Motorolla KRZR phone)
+doing C<put> on files which it doesn't seem to allow (text file instead
+of pictures) would end up with C<200, OK Success> B<BUT> the file would
+not be actually uploaded to the device and trying to C<get()> it would
+result in C<404>. Not sure if this is a "glitch" with my phone or it is
+the way it's supposed to be... silently giving OKs when things are failing.
+
+The data to be sent will be split into packets
+of the maximum size the other party can accept, if you want to change the
+size call the C<mtu()> method before calling C<put()>.
+The C<put()> method takes one mandatory and several optional
+arguments which are as follows:
+
+=head3 what
+
+    $obex->put( what => 'some_file' );
+
+B<Mandatory>. Specifies the file name of the file to C<PUT>, later this may
+be changed to allow to contain some arbitrary contents.
+
+=head3 body_in_first
+
+    $obex->put( what => 'some_file', body_in_first => 1 );
+
+B<Optional>. Takes either true or false values. If a true value is specified
+will send a C<Body> header in the first C<PUT> packet. Otherwise
+first C<Body> header will be sent only after receiving a C<Continue>
+response from the party. B<Defaults to:> C<0>
+
+=head3 length
+
+    $obex->put( what => 'some_file', length => 31232 );
+
+B<Optional>. If specified will stuff the C<PUT> packet with a C<Length>
+header containing the value of C<length> argument (the length of the
+contents to C<PUT>), this header is optional and B<by default> will
+not be sent.
+
+=head3 time
+
+    $obex->put( what => 'some_file', time => '20080320T202020Z' );
+
+B<Optional>. If specified will stuff the C<PUT> packet with a Unicode
+version of C<Time> header (date/time of last modification).
+Local times should be represented in the format YYYYMMDDTHHMMSS and UTC
+time in the format YYYYMMDDTHHMMSSZ. The letter C<T> delimits the date from
+the time. UTC time is identified by concatenating a C<Z> to the end of the
+sequence. B<By default> no C<Time> headers will be sent.
+
+=head3 name
+
+    $obex->put( what => 'some_file', name => 'other_file' );
+
+B<Optional>. If specified will insert a C<Name> header into the C<PUT>
+packet with the value you specify. B<By default> the value of C<what>
+argument will be used B<unless> you set the C<no_name> argument (see
+below) to a true value. 
+
+=head3 no_name
+
+    $obex->put( what => 'some_file', no_name => 1 );
+
+B<Optional>. By default the object will insert a C<Name> header into the
+packet with value being the name of the file specified in C<what> argument.
+If you want to prevent this set C<no_name> argument to a true value.
+B<Note:> the C<Name> header B<WILL> be sent if you specify the C<name>
+argument irrelevant of the C<no_name> argument's value. B<Note 2:>
+yo do B<NOT> have to specify the C<no_name> argument if you specified the
+C<name> argument. B<Defaults to:> C<0>
+
+=head3 headers
+
+    $obex->put( what => 'file', headers => [ $some, $raw, $headers ] );
+
+B<Optional>. If you want to pass along some additional packet headers
+to the SetPath packet you can use the C<headers> argument which takes
+an arrayref elements of which are OBEX packet headers. See
+L<Net::OBEX::Packet::Headers> for information on how to make them.
+B<Defaults to:> C<[]> (no headers)
+
+=head3 C<put> RETURN VALUE
+
+    $VAR1 = {
+        'info' => {
+            'packet_length' => 3,
+            'response_code' => 200,
+            'headers_length' => 0,
+            'response_code_meaning' => 'OK, Success'
+        },
+        'raw_packet' => '�'
+    };
+
+If an error occured during the request, C<put()> will return either
+C<undef> or an empty list, depending on the context and the reason
+for the error will be available via C<error()> method. Otherwise it will
+return a hashref presented above. If the
+dump above is not self explanatory see L<Net::OBEX::Response>
+C<parse_sock()> method description for the return value when
+"is connect packet" option is false.
+
 =head2 close
 
     $obex->close;
@@ -816,7 +1069,7 @@ C<Description> header of the C<Disconnect> packet. Always returns C<1>.
     my $last_response_ref = $obex->response;
 
 Takes no arguments, returns the return value of the last successful
-C<get()>, C<set_path()>, C<connect()> or C<disconnect()> method.
+C<get()>, C<put()>, C<set_path()>, C<connect()> or C<disconnect()> method.
 
 =head2 sock
 
@@ -837,6 +1090,14 @@ If any of the C<connect()>, C<disconnect()>, C<set_path> or C<get()> methods
 fail they will return either undef or an empty list depending on the context
 and the reason for the failure will be available via C<error()> method.
 Takes no arguments, returns a human readable error message.
+
+=head2 mtu
+
+    my $server_mtu = $obex->mtu;
+
+Takes no arguments, must be called after a successful call to C<connect()>
+returns the maximum size of the packet in bytes the device we connected
+to can accept (as reported by the device in response to C<Connect>).
 
 =head2 connection_id
 
@@ -869,6 +1130,12 @@ want to include in C<headers> arguments (where applicable).
 
 Takes no arguments, returns a L<Net::OBEX::Packet::Request> object used
 internally. 
+
+=head1 EXAMPLES
+
+The C<examples> directory of this distribution contains C<get.pl> and
+C<put.pl> scripts which work fine for me, note that you'll need to change
+address/port as well as filenames for your device.
 
 =head1 AUTHOR
 

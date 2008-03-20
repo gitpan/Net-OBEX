@@ -1,5 +1,8 @@
 Revision history for Net-OBEX
 
+0.004   Mar 20, 2008
+        Added C<STATUS METHODS>, C<mtu()> and C<put()> functionality
+
 0.003   Mar 5, 2008
         Fixed the bug where contents of End Of Body headers
             were not appended to returns of get()

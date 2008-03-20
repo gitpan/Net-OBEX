@@ -13,6 +13,7 @@ WriteMakefile
                            'Net::OBEX::Packet::Headers' => '0.002',
                            'IO::Handle' => '1.27',
                            'Socket::Class' => '1.13',
+                           'Devel::TakeHashArgs' => '0.002',
                            'Carp' => '1.04',
                            'Test::More' => 0,
                            'Class::Data::Accessor' => '0.04001'

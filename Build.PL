@@ -18,6 +18,7 @@ my $builder = Module::Build->new(
         'Net::OBEX::Response'        => 0.002,
         'Net::OBEX::Packet::Headers' => 0.002,
         'Class::Data::Accessor'      => 0.04001,
+        'Devel::TakeHashArgs'        => 0.002,
     },
     add_to_cleanup      => [ 'Net-OBEX-*' ],
     create_makefile_pl => 'traditional',
