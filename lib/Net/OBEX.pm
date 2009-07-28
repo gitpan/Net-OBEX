@@ -3,7 +3,7 @@ package Net::OBEX;
 use warnings;
 use strict;
 
-our $VERSION = '0.004';
+our $VERSION = '0.005';
 
 use Carp;
 use Socket::Class;
@@ -1140,7 +1140,7 @@ address/port as well as filenames for your device.
 =head1 AUTHOR
 
 Zoffix Znet, C<< <zoffix at cpan.org> >>
-(L<http://zoffix.com>, L<http://haslayout.net>)
+(L<http://zoffix.com>, L<http://haslayout.net>, L<http://zofdesign.com/>)
 
 =head1 BUGS
 

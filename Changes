@@ -1,5 +1,8 @@
 Revision history for Net-OBEX
 
+0.005   July 27, 2009
+        Added my links
+
 0.004   Mar 20, 2008
         Added C<STATUS METHODS>, C<mtu()> and C<put()> functionality
 
