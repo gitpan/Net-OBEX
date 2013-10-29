@@ -1,14 +1,22 @@
 ---
-name: Net-OBEX
-version: 0.005
+abstract: 'implementation of OBEX protocol'
 author:
   - 'Zoffix Znet <zoffix@cpan.org>'
-abstract: implementation of OBEX protocol
-license: perl
-resources:
-  license: http://dev.perl.org/licenses/
 build_requires:
   Test::More: 0
+configure_requires:
+  Module::Build: 0.4
+dynamic_config: 1
+generated_by: 'Module::Build version 0.4007, CPAN::Meta::Converter version 2.132830'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Net-OBEX
+provides:
+  Net::OBEX:
+    file: lib/Net/OBEX.pm
+    version: 0.006
 requires:
   Carp: 1.04
   Class::Data::Accessor: 0.04001
@@ -18,13 +26,7 @@ requires:
   Net::OBEX::Packet::Request: 0.003
   Net::OBEX::Response: 0.002
   Socket::Class: 1.13
-configure_requires:
-  Module::Build: 0.34
-provides:
-  Net::OBEX:
-    file: lib/Net/OBEX.pm
-    version: 0.005
-generated_by: Module::Build version 0.34
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
+  perl: 5.006
+resources:
+  license: http://dev.perl.org/licenses/
+version: 0.006

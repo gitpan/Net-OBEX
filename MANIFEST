@@ -11,3 +11,4 @@ examples/get.pl
 examples/put.pl
 Makefile.PL
 META.yml
+META.json

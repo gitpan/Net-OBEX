@@ -3,7 +3,7 @@ package Net::OBEX;
 use warnings;
 use strict;
 
-our $VERSION = '0.005';
+our $VERSION = '0.006';
 
 use Carp;
 use Socket::Class;
@@ -407,6 +407,8 @@ sub _set_error {
 
 1;
 __END__
+
+=encoding utf8
 
 =head1 NAME
 
